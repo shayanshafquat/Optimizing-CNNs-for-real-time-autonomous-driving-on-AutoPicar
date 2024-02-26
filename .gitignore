@@ -32,5 +32,5 @@ share/python-wheels/
 *.tar
 *.tgz
 *.csv
-autopilot/mlis2024/test_data
-autopilot/mlis2024/training_data
+mlis2024/test_data
+mlis2024/training_data
