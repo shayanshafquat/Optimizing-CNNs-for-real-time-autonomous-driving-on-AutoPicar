@@ -1,5 +1,5 @@
 import os
-import datetime
+from datetime import datetime
 import random
 
 import numpy as np
@@ -14,7 +14,6 @@ from utils import get_merged_df
 import tensorflow as tf
 from tensorflow.keras.utils import to_categorical
 
-import keras
 from keras.models import Sequential, Model  # V2 is tensorflow.keras.xxxx, V1 is keras.xxx
 from keras.layers import Conv2D, MaxPool2D, Dropout, Flatten, Dense, Input, GlobalAveragePooling2D
 from keras.models import load_model
@@ -23,14 +22,16 @@ from tensorflow.keras.callbacks import ModelCheckpoint
 from tensorflow.keras.metrics import F1Score, AUC, CategoricalAccuracy, BinaryAccuracy
 from tensorflow.keras.optimizers import RMSprop
 
-print( f'tf.__version__: {tf.__version__}' )
-print( f'keras.__version__: {keras.__version__}' )
+print( f"tf.__version__: {tf.__version__}" )
+# print( f"keras.__version__: {keras.__version__}" )
 
 import cv2
 from PIL import Image
 
+timestamp = datetime.now().strftime('%Y%m%d-%H%M')
+
 data_dir = 'training_data/training_data'
-norm_csv_path = 'training_norm.csv'
+norm_csv_path = 'training_data/training_norm.csv'
 cleaned_df = get_merged_df(data_dir, norm_csv_path)
 
 X_train, X_valid, y_train, y_valid = train_test_split(cleaned_df['image_path'].to_list(), cleaned_df['angle'].to_list(), test_size=0.3)
@@ -73,21 +74,22 @@ def image_data_generator(image_paths, angle_labels, batch_size):
         yield( np.asarray(batch_images), np.asarray(batch_angles))
 
 def mobile_net_classification_model():
+
+    base_model = keras.applications.MobileNetV2(include_top=False, weights="imagenet", input_shape=(224,224,3))
+    base_model.trainable = False
+    
     inputs = Input(shape=(224, 224, 3))
     x = tf.keras.layers.Rescaling(1./127.5, offset=-1)(inputs)
-
-    base_model = tf.keras.applications.MobileNetV2(include_top=False, weights="imagenet", input_tensor=x)
-    base_model.trainable = False
-
-    x = GlobalAveragePooling2D()(base_model.output)
+    x = base_model(x, training=False)
+    x = keras.layers.GlobalAveragePooling2D()(x)
 
     # Common part of the model
     common = Dense(1024, activation='relu')(x)
-    common = Dropout(0.35)(common)
+    common = Dropout(0.3)(common)
 
     # Branch for the angle prediction (multi-class classification)
     angle_branch = Dense(512, activation='relu')(common)
-    angle_branch = Dropout(0.35)(angle_branch)
+    angle_branch = Dropout(0.3)(angle_branch)
     angle_output = Dense(17, activation='softmax', name='angle_output')(angle_branch) # 17 classes for angle
 
     model = Model(inputs=inputs, outputs=angle_output)
@@ -118,7 +120,7 @@ log_dir_root = f'{model_output_dir}/logs'
 tensorboard_callback = TensorBoard(log_dir_root, histogram_freq=1)
 
 # Specify the file path where you want to save the model
-filepath = 'models/angle/{epoch:02d}-{val_loss:.2f}'
+filepath = f'models/angle/{timestamp}'
 
 # Create the ModelCheckpoint callback
 model_checkpoint_callback = ModelCheckpoint(
@@ -142,9 +144,19 @@ history = model.fit(
     callbacks=[model_checkpoint_callback, tensorboard_callback]
 )
 
-optimizer = tf.keras.optimizers.RMSprop(learning_rate=0.00001)  # Lower learning rate
+# Path to your HDF5 file
+model_path = filepath+'.hdf5'
 
-model.trainable = True
+# Load the model
+model = load_model(model_path)
+
+optimizer = RMSprop(learning_rate=0.00001)  # Lower learning rate
+# optimizer = Adam(learning_rate=0.00001)
+
+model.layers[1].trainable = True
+# Unfreeze the top 20 layers of the model
+for layer in model.layers[2].layers[-20:]:
+    layer.trainable = True
 
 model.compile(optimizer=optimizer,
               loss='categorical_crossentropy',

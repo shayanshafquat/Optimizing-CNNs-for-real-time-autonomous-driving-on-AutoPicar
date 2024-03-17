@@ -14,6 +14,7 @@ from utils import get_merged_df
 import tensorflow as tf
 import keras
 from tensorflow.keras.utils import to_categorical
+from tensorflow.keras.models import load_model
 
 from keras.models import Sequential, Model  # V2 is tensorflow.keras.xxxx, V1 is keras.xxx
 from keras.layers import Conv2D, MaxPool2D, Dropout, Flatten, Dense, Input, GlobalAveragePooling2D
