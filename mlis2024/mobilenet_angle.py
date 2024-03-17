@@ -30,7 +30,7 @@ import cv2
 from PIL import Image
 
 data_dir = 'training_data/training_data'
-norm_csv_path = 'training_data/training_norm.csv'
+norm_csv_path = 'training_norm.csv'
 cleaned_df = get_merged_df(data_dir, norm_csv_path)
 
 X_train, X_valid, y_train, y_valid = train_test_split(cleaned_df['image_path'].to_list(), cleaned_df['angle'].to_list(), test_size=0.3)
@@ -83,11 +83,11 @@ def mobile_net_classification_model():
 
     # Common part of the model
     common = Dense(1024, activation='relu')(x)
-    common = Dropout(0.3)(common)
+    common = Dropout(0.35)(common)
 
     # Branch for the angle prediction (multi-class classification)
     angle_branch = Dense(512, activation='relu')(common)
-    angle_branch = Dropout(0.3)(angle_branch)
+    angle_branch = Dropout(0.35)(angle_branch)
     angle_output = Dense(17, activation='softmax', name='angle_output')(angle_branch) # 17 classes for angle
 
     model = Model(inputs=inputs, outputs=angle_output)
@@ -96,7 +96,7 @@ def mobile_net_classification_model():
     custom_lr = 0.01  # Example custom learning rate
     optimizer = RMSprop(learning_rate=custom_lr)
 
-    model.compile(optimizer='rmsprop',
+    model.compile(optimizer=optimizer,
                   loss='categorical_crossentropy',
                   metrics='accuracy')
 
@@ -133,11 +133,30 @@ model_checkpoint_callback = ModelCheckpoint(
 
 history = model.fit(
     image_data_generator(X_train, y_train, batch_size=128),
-    steps_per_epoch=100,
+    steps_per_epoch=len(X_train) // 128,
     epochs=10,
     validation_data = image_data_generator(X_valid, y_valid, batch_size=128),
-    validation_steps=128,
+    validation_steps=len(X_valid) // 128,
     verbose=1,
     shuffle=1,
     callbacks=[model_checkpoint_callback, tensorboard_callback]
+)
+
+optimizer = tf.keras.optimizers.RMSprop(learning_rate=0.00001)  # Lower learning rate
+
+model.trainable = True
+
+model.compile(optimizer=optimizer,
+              loss='categorical_crossentropy',
+              metrics=['accuracy'])
+
+# Step 3: Continue training the model
+history_fine = model.fit(
+    image_data_generator(X_train, y_train, batch_size=128),
+    steps_per_epoch=len(X_train) // 128,
+    epochs=10,  # You can adjust the number of epochs for fine-tuning
+    validation_data=image_data_generator(X_valid, y_valid, batch_size=128),
+    validation_steps=len(X_valid) // 128,
+    verbose=1,
+    callbacks=[model_checkpoint_callback]  # Assuming this callback is already defined
 )
