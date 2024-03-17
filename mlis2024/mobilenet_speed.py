@@ -33,7 +33,7 @@ from PIL import Image
 timestamp = datetime.now().strftime('%Y%m%d')
 
 data_dir = 'training_data/training_data'
-norm_csv_path = 'training_data/training_norm.csv'
+norm_csv_path = 'training_norm.csv'
 cleaned_df = get_merged_df(data_dir, norm_csv_path)
 
 X_train, X_valid, y_train, y_valid = train_test_split(cleaned_df['image_path'].to_list(), cleaned_df['speed'].to_list(), test_size=0.3)
