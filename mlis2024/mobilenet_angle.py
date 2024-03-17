@@ -12,6 +12,7 @@ from utils import get_merged_df
 
 # tensorflow
 import tensorflow as tf
+import keras
 from tensorflow.keras.utils import to_categorical
 
 from keras.models import Sequential, Model  # V2 is tensorflow.keras.xxxx, V1 is keras.xxx
@@ -31,7 +32,7 @@ from PIL import Image
 timestamp = datetime.now().strftime('%Y%m%d-%H%M')
 
 data_dir = 'training_data/training_data'
-norm_csv_path = 'training_data/training_norm.csv'
+norm_csv_path = 'training_norm.csv'
 cleaned_df = get_merged_df(data_dir, norm_csv_path)
 
 X_train, X_valid, y_train, y_valid = train_test_split(cleaned_df['image_path'].to_list(), cleaned_df['angle'].to_list(), test_size=0.3)
@@ -48,7 +49,7 @@ def img_preprocess(image):
     # height, _, _ = image.shape
     # image = image[int(height/2):,:,:]  # remove top half of the image, as it is not relavant for lane following
     # image = cv2.cvtColor(image, cv2.COLOR_RGB2YUV)  # Nvidia model said it is best to use YUV color space
-    # image = cv2.GaussianBlur(image, (3,3), 0)
+    image = cv2.GaussianBlur(image, (3,3), 0)
     image = cv2.resize(image, (224,224)) # input image size (200,66) Nvidia model
     # image = image / 255 # normalizing, the processed image becomes black for some reason.  do we need this?
     # image = (image - 127.5) / 127.5
@@ -95,7 +96,7 @@ def mobile_net_classification_model():
     model = Model(inputs=inputs, outputs=angle_output)
 
     # Create an RMSprop optimizer with a custom learning rate
-    custom_lr = 0.01  # Example custom learning rate
+    custom_lr = 0.001  # Example custom learning rate
     optimizer = RMSprop(learning_rate=custom_lr)
 
     model.compile(optimizer=optimizer,
