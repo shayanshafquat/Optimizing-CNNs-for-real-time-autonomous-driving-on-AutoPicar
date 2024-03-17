@@ -142,11 +142,8 @@ history = model.fit(
     callbacks=[model_checkpoint_callback, tensorboard_callback]
 )
 
-# Path to your HDF5 file
-model_path = filepath+'.hdf5'
-
 # Load the model
-model = load_model(model_path)
+model = load_model(filepath)
 
 # optimizer = RMSprop(learning_rate=0.00001)  # Lower learning rate
 optimizer = Adam(learning_rate=0.00001)
