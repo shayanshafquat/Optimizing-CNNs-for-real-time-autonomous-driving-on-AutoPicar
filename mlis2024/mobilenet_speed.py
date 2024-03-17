@@ -30,7 +30,7 @@ print( f"tf.__version__: {tf.__version__}" )
 import cv2
 from PIL import Image
 
-timestamp = datetime.now().strftime('%Y%m%d-%H%M')
+timestamp = datetime.now().strftime('%Y%m%d')
 
 data_dir = 'training_data/training_data'
 norm_csv_path = 'training_data/training_norm.csv'
@@ -93,8 +93,8 @@ def mobile_net_classification_model():
 
     # Create an RMSprop optimizer with a custom learning rate
     custom_lr = 0.001  # Example custom learning rate
-    optimizer = RMSprop(learning_rate=custom_lr)
-    # optimizer = Adam(learning_rate=custom_lr)
+    # optimizer = RMSprop(learning_rate=custom_lr)
+    optimizer = Adam(learning_rate=custom_lr)
 
     model.compile(optimizer=optimizer,
                   loss='binary_crossentropy',
@@ -148,10 +148,9 @@ model_path = filepath+'.hdf5'
 # Load the model
 model = load_model(model_path)
 
-optimizer = RMSprop(learning_rate=0.00001)  # Lower learning rate
-# optimizer = Adam(learning_rate=0.00001)
+# optimizer = RMSprop(learning_rate=0.00001)  # Lower learning rate
+optimizer = Adam(learning_rate=0.00001)
 
-model.layers[1].trainable = True
 # Unfreeze the top 20 layers of the model
 for layer in model.layers[2].layers[-20:]:
     layer.trainable = True

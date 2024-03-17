@@ -13,15 +13,17 @@ from utils import get_merged_df
 # tensorflow
 import tensorflow as tf
 import keras
+import keras
 from tensorflow.keras.utils import to_categorical
 
+from tensorflow.keras.models import load_model
 from keras.models import Sequential, Model  # V2 is tensorflow.keras.xxxx, V1 is keras.xxx
 from keras.layers import Conv2D, MaxPool2D, Dropout, Flatten, Dense, Input, GlobalAveragePooling2D
 from keras.models import load_model
 from tensorflow.keras.callbacks import TensorBoard
 from tensorflow.keras.callbacks import ModelCheckpoint
 from tensorflow.keras.metrics import F1Score, AUC, CategoricalAccuracy, BinaryAccuracy
-from tensorflow.keras.optimizers import RMSprop
+from tensorflow.keras.optimizers import RMSprop, Adam
 
 print( f"tf.__version__: {tf.__version__}" )
 # print( f"keras.__version__: {keras.__version__}" )
@@ -29,7 +31,7 @@ print( f"tf.__version__: {tf.__version__}" )
 import cv2
 from PIL import Image
 
-timestamp = datetime.now().strftime('%Y%m%d-%H%M')
+timestamp = datetime.now().strftime('%Y%m%d')
 
 data_dir = 'training_data/training_data'
 norm_csv_path = 'training_norm.csv'
@@ -97,7 +99,8 @@ def mobile_net_classification_model():
 
     # Create an RMSprop optimizer with a custom learning rate
     custom_lr = 0.001  # Example custom learning rate
-    optimizer = RMSprop(learning_rate=custom_lr)
+    # optimizer = RMSprop(learning_rate=custom_lr)
+    optimizer = Adam(learning_rate=custom_lr)
 
     model.compile(optimizer=optimizer,
                   loss='categorical_crossentropy',
@@ -152,9 +155,8 @@ model_path = filepath+'.hdf5'
 model = load_model(model_path)
 
 optimizer = RMSprop(learning_rate=0.00001)  # Lower learning rate
-# optimizer = Adam(learning_rate=0.00001)
+optimizer = Adam(learning_rate=0.00001)
 
-model.layers[1].trainable = True
 # Unfreeze the top 20 layers of the model
 for layer in model.layers[2].layers[-20:]:
     layer.trainable = True
