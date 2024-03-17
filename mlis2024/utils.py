@@ -19,6 +19,7 @@ from keras.models import load_model
 from tensorflow.keras.callbacks import TensorBoard
 from tensorflow.keras.callbacks import ModelCheckpoint
 from tensorflow.keras.utils import to_categorical
+from tensorflow.keras.optimizers import RMSprop
 
 print( f'tf.__version__: {tf.__version__}' )
 print( f'keras.__version__: {keras.__version__}' )
@@ -109,6 +110,9 @@ def mobile_net_classification_model():
 
 
     model = Model(inputs=inputs, outputs=[angle_output, speed_output])
+    # Create an RMSprop optimizer with a custom learning rate
+    custom_lr = 0.0001  # Example custom learning rate
+    optimizer = RMSprop(learning_rate=custom_lr)
 
     model.compile(optimizer='adam',
                   loss={'angle_output': 'categorical_crossentropy', 'speed_output': 'binary_crossentropy'},
@@ -154,6 +158,7 @@ image_paths = cleaned_df['image_path'].to_list()
 
 X_train, X_valid, angle_train, angle_valid, speed_train, speed_valid = train_test_split(image_paths, angle_labels, speed_labels, test_size=0.3)
 
+model = mobile_net_classification_model()
 
 model_output_dir = 'models/combined'
 
@@ -185,7 +190,6 @@ history = model.fit(
     steps_per_epoch=500,
     epochs=10,
     validation_data = image_data_generator(X_valid, {'angle_output': angle_valid, 'speed_output': speed_valid}, batch_size=128),
-    validation_steps=200,
     verbose=1,
     shuffle=1,
     callbacks=[model_checkpoint_callback, tensorboard_callback]
