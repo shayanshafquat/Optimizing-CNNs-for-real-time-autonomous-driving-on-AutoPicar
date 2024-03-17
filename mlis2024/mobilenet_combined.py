@@ -101,7 +101,7 @@ def mobile_net_classification_model():
 
     model = Model(inputs=inputs, outputs=[angle_output, speed_output])
     # Create an RMSprop optimizer with a custom learning rate
-    custom_lr = 0.0001  # Example custom learning rate
+    custom_lr = 0.001  # Example custom learning rate
     optimizer = RMSprop(learning_rate=custom_lr)
 
     model.compile(optimizer='adam',
@@ -151,10 +151,27 @@ model_checkpoint_callback = ModelCheckpoint(
 
 history = model.fit(
     image_data_generator(X_train, {'angle_output': angle_train, 'speed_output': speed_train}, batch_size=128),
-    steps_per_epoch=500,
+    steps_per_epoch=len(X_train) // 128,
     epochs=10,
     validation_data = image_data_generator(X_valid, {'angle_output': angle_valid, 'speed_output': speed_valid}, batch_size=128),
+    validation_steps=len(X_valid) // 128,
     verbose=1,
-    shuffle=1,
     callbacks=[model_checkpoint_callback, tensorboard_callback]
+)
+
+optimizer = tf.keras.optimizers.RMSprop(learning_rate=0.00001)  # Lower learning rate
+
+model.compile(optimizer=optimizer,
+              loss='categorical_crossentropy',
+              metrics=['accuracy'])
+
+# Step 3: Continue training the model
+history_fine = model.fit(
+    image_data_generator(X_train, y_train, batch_size=128),
+    steps_per_epoch=len(X_train) // 128,
+    epochs=10,  # You can adjust the number of epochs for fine-tuning
+    validation_data=image_data_generator(X_valid, y_valid, batch_size=128),
+    validation_steps=len(X_valid) // 128,
+    verbose=1,
+    callbacks=[model_checkpoint_callback]  # Assuming this callback is already defined
 )
