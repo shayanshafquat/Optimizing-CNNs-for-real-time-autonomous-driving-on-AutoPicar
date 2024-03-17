@@ -161,16 +161,18 @@ history = model.fit(
 
 optimizer = tf.keras.optimizers.RMSprop(learning_rate=0.00001)  # Lower learning rate
 
-model.compile(optimizer=optimizer,
-              loss='categorical_crossentropy',
-              metrics=['accuracy'])
+model.trainable = True
+
+model.compile(optimizer='adam',
+                loss={'angle_output': 'categorical_crossentropy', 'speed_output': 'binary_crossentropy'},
+                metrics={'angle_output': 'accuracy', 'speed_output': 'accuracy'})
 
 # Step 3: Continue training the model
 history_fine = model.fit(
-    image_data_generator(X_train, y_train, batch_size=128),
+    image_data_generator(X_train, {'angle_output': angle_train, 'speed_output': speed_train}, batch_size=128),
     steps_per_epoch=len(X_train) // 128,
     epochs=10,  # You can adjust the number of epochs for fine-tuning
-    validation_data=image_data_generator(X_valid, y_valid, batch_size=128),
+    validation_data=image_data_generator(X_valid, {'angle_output': angle_valid, 'speed_output': speed_valid}, batch_size=128),
     validation_steps=len(X_valid) // 128,
     verbose=1,
     callbacks=[model_checkpoint_callback]  # Assuming this callback is already defined
