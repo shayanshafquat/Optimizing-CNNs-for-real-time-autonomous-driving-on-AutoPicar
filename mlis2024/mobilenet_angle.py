@@ -13,10 +13,9 @@ from utils import get_merged_df
 # tensorflow
 import tensorflow as tf
 import keras
-<<<<<<< Updated upstream
+
 import keras
-=======
->>>>>>> Stashed changes
+
 from tensorflow.keras.utils import to_categorical
 
 from tensorflow.keras.models import load_model
@@ -127,7 +126,7 @@ log_dir_root = f'{model_output_dir}/logs'
 tensorboard_callback = TensorBoard(log_dir_root, histogram_freq=1)
 
 # Specify the file path where you want to save the model
-filepath = f'models/angle/{timestamp}'
+filepath = f'models/angle/mobilenet_{timestamp}_{val_loss:.2f}'
 
 # Create the ModelCheckpoint callback
 model_checkpoint_callback = ModelCheckpoint(
@@ -154,7 +153,7 @@ history = model.fit(
 # Load the model
 model = load_model(filepath)
 
-optimizer = RMSprop(learning_rate=0.00001)  # Lower learning rate
+# optimizer = RMSprop(learning_rate=0.00001)  # Lower learning rate
 optimizer = Adam(learning_rate=0.00001)
 
 # Unfreeze the top 20 layers of the model
