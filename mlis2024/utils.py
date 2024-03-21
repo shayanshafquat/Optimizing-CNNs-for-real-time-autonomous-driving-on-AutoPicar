@@ -1,6 +1,53 @@
 import os
 import cv2
 import pandas as pd
+import shutil
+
+
+def restructuring_data():
+    # Load the CSV file with image IDs, angles, and speeds
+    data = pd.read_csv('training_norm.csv')
+
+    # Preprocess the data as per your provided logic
+    data['angle'] = data['angle']*80 + 50
+    data.loc[data['speed'] > 1, 'speed'] = 1
+
+    # Base directory where images are stored
+    image_dir = 'training_data/training_data/'
+
+    # Create directories for angle and speed classes
+    angle_class_dir = 'angle_class_data'
+    speed_class_dir = 'speed_class_data'
+
+    # Get unique classes for angles and speeds
+    unique_angles = data['angle'].unique()
+    unique_speeds = data['speed'].unique()
+
+    # Make directories for angle classes
+    for angle in unique_angles:
+        angle_dir = os.path.join(angle_class_dir, str(angle))
+        os.makedirs(angle_dir, exist_ok=True)
+
+    # Make directories for speed classes
+    for speed in unique_speeds:
+        speed_dir = os.path.join(speed_class_dir, str(speed))
+        os.makedirs(speed_dir, exist_ok=True)
+
+    # Function to copy images to the respective class directories
+    def copy_images_to_class_dirs(row, image_dir, class_dir, class_label):
+        source_path = os.path.join(image_dir, f"{int(row['image_id'])}.png")
+        target_path = os.path.join(class_dir, str(row[class_label]), f"{int(row['image_id'])}.png")
+        if not os.path.exists(target_path):  # Check if the file has already been copied
+            shutil.copy(source_path, target_path)
+
+    # Copy images to angle class directories
+    data.apply(lambda row: copy_images_to_class_dirs(row, image_dir, angle_class_dir, "angle"), axis=1)
+
+    # Copy images to speed class directories
+    data.apply(lambda row: copy_images_to_class_dirs(row, image_dir, speed_class_dir, "speed"), axis=1)
+
+    print("Data restructuring complete.")
+
 
 def get_merged_df(data_dir, norm_csv_path):
     # Read the normalized CSV data
