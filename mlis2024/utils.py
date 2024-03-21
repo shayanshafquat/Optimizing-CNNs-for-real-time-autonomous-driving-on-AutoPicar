@@ -90,3 +90,5 @@ def get_merged_df(data_dir, norm_csv_path):
 
     # Return the cleaned and merged DataFrame
     return cleaned_df
+
+restructuring_data()
