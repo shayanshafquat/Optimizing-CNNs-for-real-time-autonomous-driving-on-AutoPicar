@@ -18,9 +18,10 @@ def build_model(num_classes):
 
     # with tf.device('/cpu:0'):
     data_augmentation = tf.keras.Sequential([tf.keras.layers.RandomBrightness(0.1, seed=123),
+                                             tf.keras.layers.RandomContrast(0.1, seed=123),
                                             tf.keras.layers.RandomFlip('horizontal', seed=123),
                                             tf.keras.layers.CenterCrop(224,224),
-                                            tf.keras.layers.RandomZoom(0.1, fill_mode='reflect', seed=123),
+                                            # tf.keras.layers.RandomZoom(0.1, fill_mode='reflect', seed=123),
                                             # tf.keras.layers.RandomRotation(0.05, fill_mode='nearest', seed=123),
 
     ])
@@ -33,7 +34,8 @@ def build_model(num_classes):
     x = preprocess_input(aug_inputs)  # Preprocessing for MobileNetV2
     x = base_model(x, training=False)
     x = GlobalAveragePooling2D()(x)
-    # x = Dense(1024, activation='relu')(x)
+    x = Dropout(0.35)(x)
+    x = Dense(1024, activation='relu')(x)
     x = Dropout(0.35)(x)
     outputs = Dense(num_classes, activation='softmax')(x)
     
@@ -48,45 +50,86 @@ def build_model(num_classes):
                   metrics=['accuracy', Precision(), Recall(), tf.metrics.MeanSquaredError()])
     return model
 
+# Fine-tuning function
+def fine_tune_model(model):
+    # Unfreeze all layers in base model
+    print("Finetuning ...")
 
-directory = 'angle_class_data'
-train_ds = tf.keras.utils.image_dataset_from_directory(
-            directory,
-            labels='inferred',
-            label_mode='categorical',
-            color_mode='rgb',
-            batch_size=64,
-            image_size = (240,240),
-            shuffle=True,
-            seed=123,
-            validation_split=0.2,
-            subset="training")
+    model.layers[4].trainable = True
+    for layer in model.layers[4].layers:
+        if isinstance(layer, tf.keras.layers.BatchNormalization):
+            layer.trainable = False
 
-val_ds = tf.keras.utils.image_dataset_from_directory(
-            directory,
-            labels='inferred',
-            label_mode='categorical',
-            color_mode='rgb',
-            batch_size=64,
-            image_size = (240,240),
-            shuffle=True,
-            seed=123,
-            validation_split=0.2,
-            subset="validation")
+    # optimizer = RMSprop(learning_rate=0.00001)  # Lower learning rate
+    optimizer = tf.keras.optimizers.legacy.Adam(learning_rate=0.00001)
+    # Recompile the model with a lower learning rate
+    model.compile(optimizer=optimizer,
+                  loss='categorical_focal_crossentropy',
+                  metrics=['accuracy', Precision(), Recall(), tf.metrics.MeanSquaredError()])
+    model.summary()
 
-model = build_model(17)
-model.summary()
+finetuning = False
 
-ts = datetime.now().strftime('%Y%m%d')
-checkpoint_path = f"models/angle/mobilenet_v1_{ts}"
+if __name__ == "__main__":
+    directory = 'angle_class_data'
+    train_ds = tf.keras.utils.image_dataset_from_directory(
+                directory,
+                labels='inferred',
+                label_mode='categorical',
+                color_mode='rgb',
+                batch_size=64,
+                image_size = (240,240),
+                shuffle=True,
+                seed=123,
+                validation_split=0.2,
+                subset="training")
 
-model_checkpoint_callback = ModelCheckpoint(
-checkpoint_path,
-monitor='val_loss',     # Monitor validation loss
-verbose=1,              # Log a message each time the callback saves the model
-save_best_only=True,    # Only save the model if 'val_loss' has improved
-save_weights_only=False, # Only save the weights of the model
-mode='min',             # 'min' means the monitored quantity should decrease
-save_freq='epoch')       # Check every epoch
+    val_ds = tf.keras.utils.image_dataset_from_directory(
+                directory,
+                labels='inferred',
+                label_mode='categorical',
+                color_mode='rgb',
+                batch_size=32,
+                image_size = (240,240),
+                shuffle=True,
+                seed=123,
+                validation_split=0.2,
+                subset="validation")
 
-history = model.fit(train_ds, epochs=10, validation_data=val_ds, callbacks=[model_checkpoint_callback], verbose=1)
+    ts = datetime.now().strftime('%Y%m%d')
+    checkpoint_path = f"models/angle/mobilenet_v1_{ts}"
+
+    model_checkpoint_callback = ModelCheckpoint(
+    checkpoint_path,
+    monitor='val_loss',
+    verbose=1,
+    save_best_only=True,
+    save_weights_only=False,
+    mode='min',
+    save_freq='epoch')
+
+    if not finetuning:
+        print("Base Learning")
+        model = build_model(17)
+        model.summary()
+
+        history = model.fit(train_ds, epochs=10, validation_data=val_ds, callbacks=[model_checkpoint_callback], verbose=1)
+
+    # Load the best model for fine-tuning
+    model = tf.keras.models.load_model(checkpoint_path)
+
+    # Fine-tuning
+    fine_tune_model(model)
+    # Fine-tuning training with a smaller learning rate
+    fine_tune_epochs = 10
+    total_epochs = 10 + fine_tune_epochs  # Initial epochs + fine-tune epochs
+
+    history_finetune = model.fit(
+                            train_ds,
+                            validation_data=val_ds,
+                            epochs=total_epochs,
+                            callbacks=[model_checkpoint_callback],
+                            verbose=1)
+
+    # # Evaluate the fine-tuned model
+    # evaluate_model(model, valid_generator)
