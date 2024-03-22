@@ -39,10 +39,10 @@ def build_model(num_classes):
 
     ])
 
-    base_model = tf.keras.applications.ResNet50(input_shape=(160, 160, 3), include_top=False, weights='imagenet')
+    base_model = tf.keras.applications.ResNet50(input_shape=(192, 192, 3), include_top=False, weights='imagenet')
     base_model.trainable = False  # Freeze base model
 
-    inputs = Input(shape=(160,160,3))
+    inputs = Input(shape=(192,192,3))
     aug_inputs = data_augmentation(inputs)
     x = preprocess_input(aug_inputs)  # Preprocessing for Resnet
     x = base_model(x, training=False)
@@ -68,21 +68,21 @@ def fine_tune_model(model):
     print("Finetuning ...")
 
     model.layers[4].trainable = True
-    for layer in model.layers[4].layers[:-30]:
+    for layer in model.layers[4].layers[:-15]:
         layer.trainable = False
     for layer in model.layers[4].layers[:]:
         if isinstance(layer, tf.keras.layers.BatchNormalization):
             layer.trainable = False
 
     # optimizer = RMSprop(learning_rate=0.00001)  # Lower learning rate
-    optimizer = tf.keras.optimizers.legacy.Adam(learning_rate=0.00001)
+    optimizer = tf.keras.optimizers.legacy.Adam(learning_rate=0.000001)
     # Recompile the model with a lower learning rate
     model.compile(optimizer=optimizer,
                   loss='categorical_focal_crossentropy',
                   metrics=['accuracy', F1Score(), tf.metrics.MeanSquaredError()])
     model.summary()
 
-finetuning = False
+finetuning = True
 
 if __name__ == "__main__":
     directory = 'angle_class_data'
@@ -92,7 +92,7 @@ if __name__ == "__main__":
                 label_mode='categorical',
                 color_mode='rgb',
                 batch_size=128,
-                image_size = (160,160),
+                image_size = (192,192),
                 shuffle=True,
                 seed=123,
                 validation_split=0.2,
@@ -104,7 +104,7 @@ if __name__ == "__main__":
                 label_mode='categorical',
                 color_mode='rgb',
                 batch_size=32,
-                image_size = (160,160),
+                image_size = (192,192),
                 shuffle=True,
                 seed=123,
                 validation_split=0.2,
@@ -114,7 +114,7 @@ if __name__ == "__main__":
 
     model_checkpoint_callback = ModelCheckpoint(
     checkpoint_path,
-    monitor='val_loss',
+    monitor='val_mean_squared_error',
     verbose=1,
     save_best_only=True,
     save_weights_only=False,
@@ -126,7 +126,7 @@ if __name__ == "__main__":
         model = build_model(17)
         model.summary()
 
-        history = model.fit(train_ds, epochs=10, validation_data=val_ds, callbacks=[model_checkpoint_callback], verbose=1)
+        history = model.fit(train_ds, epochs=20, validation_data=val_ds, callbacks=[model_checkpoint_callback], verbose=1)
 
     # Load the best model for fine-tuning
     model = tf.keras.models.load_model(checkpoint_path)
