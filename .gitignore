@@ -34,3 +34,7 @@ share/python-wheels/
 *.csv
 mlis2024/test_data
 mlis2024/training_data
+mlis2024/data
+mlis2024/saved_models
+mlis2024/submissions
+
