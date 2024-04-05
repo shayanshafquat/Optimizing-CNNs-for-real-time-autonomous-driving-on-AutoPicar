@@ -7,6 +7,7 @@ import random
 import tensorflow as tf
 from tensorflow.keras.layers import Layer, MaxPooling2D
 import tensorflow.keras.backend as K
+from sklearn.utils.class_weight import compute_class_weight
 
 def clear_directory(dir_path):
     if os.path.exists(dir_path):
@@ -72,6 +73,30 @@ def augment_images_for_class(row, image_dir, class_dir, class_label):
     else:
         flipped_target_path = os.path.join(class_dir, str(row[class_label]), f"{int(row['image_id'])}_flipped.png")
     save_image(flipped_image, flipped_target_path)
+
+def get_class_weights_for_angle_model(directory_path):
+    directory = directory_path
+    # Ensure we list only directories
+    class_names = ['65.0','50.0','75.0','115.0','130.0','85.0','105.0','120.0','95.0','80.0','110.0','125.0','90.0','100.0','60.0','70.0','55.0']
+    # class_names = [dir_name for dir_name in os.listdir(directory) if os.path.isdir(os.path.join(directory, dir_name))]
+    class_counts = {}
+
+    for class_name in class_names:
+        class_dir = os.path.join(directory, class_name)
+        # Count only files, ignore subdirectories
+        class_counts[class_name] = len([item for item in os.listdir(class_dir) if os.path.isfile(os.path.join(class_dir, item))])
+
+    # Calculating class weights
+    classes = list(class_counts.keys())
+    # Convert class names to indices (necessary if using `compute_class_weight`)
+    class_indices = {class_name: index for index, class_name in enumerate(classes)}
+    y = [class_indices[class_name] for class_name, count in class_counts.items() for _ in range(count)]
+
+    # Use scikit-learn's compute_class_weight to calculate class weights
+    weights = compute_class_weight(class_weight='balanced', classes=np.unique(y), y=y)
+    class_weights = dict(enumerate(weights))
+    print(class_counts)
+    return class_weights
 
     # # Apply brightness and contrast adjustments based on augmentation_intensity
     # for i in range(int((augmentation_intensity-1)/2)):

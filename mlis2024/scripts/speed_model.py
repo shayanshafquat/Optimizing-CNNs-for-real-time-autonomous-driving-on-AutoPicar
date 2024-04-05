@@ -159,7 +159,7 @@ if __name__ == "__main__":
     model = build_model(1)
     model.summary()
 
-    checkpoint_path = f"../../saves_models/speed/{model.name}_{ts}"
+    checkpoint_path = f"../../saved_models/speed/{model.name}_{ts}"
 
     model_checkpoint_callback = ModelCheckpoint(
         checkpoint_path,

@@ -10,7 +10,7 @@ from tensorflow.keras.layers import Input, Dense, Dropout, GlobalAveragePooling2
 from tensorflow.keras.models import Model
 from tensorflow.keras.metrics import Precision, Recall, F1Score
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
-from utils import SpatialPyramidPooling
+from utils import SpatialPyramidPooling, GaussianBlurLayer, get_class_weights_for_angle_model
 from vit_keras import vit
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2' 
@@ -113,9 +113,9 @@ def build_model(num_classes, model_name):
     base_model.trainable = False  # Freeze base model
 
     inputs = Input(shape=(192,192,3))
-    x = GaussianBlurLayer(kernel_size=(5, 5), sigma=0, input_shape=(192, 192, 3))(inputs)
-    x = preprocess_input(x)  # Preprocessing for Resnet
-    x = data_augmentation(x)
+    x = data_augmentation(inputs)
+    x = GaussianBlurLayer(kernel_size=(5, 5), sigma=0, input_shape=(192, 192, 3))(x)
+    x = preprocess_input(x) # Preprocessing for Resnet
 
     x = base_model(x, training=False)
     x = GlobalAveragePooling2D()(x)
@@ -146,15 +146,15 @@ def fine_tune_model(model, checkpoint_path):
     print("Finetuning ...")
 
     # Unfreeze all layers in base model
-    model.layers[4].trainable = True
-    for layer in model.layers[4].layers[:-30]:
+    model.layers[5].trainable = True
+    for layer in model.layers[5].layers[:-30]:
         layer.trainable = False
-    for layer in model.layers[4].layers[:]:
+    for layer in model.layers[5].layers[:]:
         if isinstance(layer, tf.keras.layers.BatchNormalization):
             layer.trainable = False
 
     # optimizer = RMSprop(learning_rate=0.00001)  # Lower learning rate
-    optimizer = tf.keras.optimizers.legacy.Adam(learning_rate=0.00005)
+    optimizer = tf.keras.optimizers.legacy.Adam(learning_rate=0.00001)
     # Recompile the model with a lower learning rate
     model.compile(optimizer=optimizer,
                   loss='categorical_focal_crossentropy',
@@ -163,13 +163,14 @@ def fine_tune_model(model, checkpoint_path):
 
 
 if __name__ == "__main__":
-    directory = '../../data/angle_class_aug_data'
+    directory = '../../data/angle_class_data'
     finetuning = False
     
     train_ds = tf.keras.utils.image_dataset_from_directory(
                 directory,
                 labels='inferred',
                 label_mode='categorical',
+                class_names = ['65.0','50.0','75.0','115.0','130.0','85.0','105.0','120.0','95.0','80.0','110.0','125.0','90.0','100.0','60.0','70.0','55.0'],
                 color_mode='rgb',
                 batch_size=128,
                 image_size = (192,256),
@@ -182,6 +183,7 @@ if __name__ == "__main__":
                 directory,
                 labels='inferred',
                 label_mode='categorical',
+                class_names = ['65.0','50.0','75.0','115.0','130.0','85.0','105.0','120.0','95.0','80.0','110.0','125.0','90.0','100.0','60.0','70.0','55.0'],
                 color_mode='rgb',
                 batch_size=128,
                 image_size = (192,256),
@@ -192,7 +194,8 @@ if __name__ == "__main__":
 
     ts = datetime.now().strftime('%Y%m%d')
     
-    class_weights = {0: 0.6150882051899572, 1: 0.6836645921167102, 2: 0.6699455702013247, 3: 1.2103548367987678, 4: 3.732553891121666, 5: 16.025098039215685, 6: 15.213700670141474, 7: 16.92792046396023, 8: 14.480510276399716, 9: 3.653137850885035, 10: 1.2264105642256902, 11: 0.6618294895050532, 12: 0.6805675837719006, 13: 0.6319044968144987, 14: 0.4927766924728071, 15: 0.7405313326809467, 16: 0.49096501345636295}
+    class_weights = get_class_weights_for_angle_model(directory)
+    
     print("Class weights for multi classification:", class_weights)
 
     model_name = 'resnetv2'
@@ -212,7 +215,7 @@ if __name__ == "__main__":
     if not finetuning:
         print("Base Learning")
         history = model.fit(train_ds,
-                epochs=20,
+                epochs=15,
                 validation_data=val_ds,
                 callbacks=[model_checkpoint_callback],
                 verbose=1, class_weight=class_weights)
@@ -223,7 +226,7 @@ if __name__ == "__main__":
     # Fine-tuning
     fine_tune_model(model, checkpoint_path)
     # Fine-tuning training with a smaller learning rate
-    fine_tune_epochs = 20
+    fine_tune_epochs = 8
 
     history_finetune = model.fit(
                             train_ds,
