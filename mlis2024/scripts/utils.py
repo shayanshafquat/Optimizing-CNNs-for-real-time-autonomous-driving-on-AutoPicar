@@ -99,13 +99,13 @@ def augment_images_for_class(row, image_dir, class_dir, class_label):
     #     tf.keras.preprocessing.image.save_img(contrast_image_path, contrast_image.numpy())
 
 def restructuring_data(load_original, is_augment):
-    data = pd.read_csv('training_norm.csv')
+    data = pd.read_csv('../../training_norm.csv')
     data['angle'] = data['angle'] * 80 + 50
     data.loc[data['speed'] > 1, 'speed'] = 0
     
-    image_dir = 'training_data/training_data/'
-    angle_class_dir = 'angle_class_data_1'
-    speed_class_dir = 'speed_class_data_1'
+    image_dir = '../../training_data/training_data/'
+    angle_class_dir = '../../data/angle_class_aug_data'
+    speed_class_dir = '../../data/speed_class_data'
 
     if load_original:
         save_original_images(angle_class_dir, speed_class_dir, image_dir, data)
@@ -138,9 +138,33 @@ def restructuring_data(load_original, is_augment):
 
     print("Data restructuring complete.")
 
-load_original = True
-is_augment = False
-restructuring_data(load_original, is_augment)
+class GaussianBlurLayer(Layer):
+    def __init__(self, kernel_size=(5, 5), sigma=0, **kwargs):
+        super(GaussianBlurLayer, self).__init__(**kwargs)
+        self.kernel_size = kernel_size
+        self.sigma = sigma
+
+    def call(self, inputs):
+        # Wrap the cv2 GaussianBlur operation in tf.py_function to ensure compatibility with TensorFlow tensors
+        def blur_function(image):
+            # image is a numpy array here
+            blurred_image = cv2.GaussianBlur(image, self.kernel_size, self.sigma)
+            return blurred_image
+
+        # Apply the blur function on each input
+        blurred_inputs = tf.map_fn(lambda img: tf.py_function(blur_function, [img], tf.float32), inputs, fn_output_signature=tf.float32)
+        blurred_inputs.set_shape(inputs.shape)  # Ensure output shape is set correctly
+        return blurred_inputs
+
+    def get_config(self):
+        config = super(GaussianBlurLayer, self).get_config()
+        config.update({
+            'kernel_size': self.kernel_size,
+            'sigma': self.sigma,
+        })
+        return config
+
+import tensorflow.keras.backend as K
 
 class SpatialPyramidPooling(Layer):
 	"""Spatial pyramid pooling layer for 2D inputs.
@@ -254,6 +278,11 @@ class SpatialPyramidPooling(Layer):
 			outputs = K.reshape(outputs, (input_shape[0], self.num_outputs_per_channel * self.nb_channels))
 
 		return outputs
+
+if __name__ == "__main__":
+    load_original = True
+    is_augment = True
+    restructuring_data(load_original, is_augment)
 
 # def get_merged_df(data_dir, norm_csv_path):
 #     # Read the normalized CSV data
