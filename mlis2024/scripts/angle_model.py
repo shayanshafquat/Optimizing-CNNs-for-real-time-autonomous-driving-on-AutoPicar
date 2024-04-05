@@ -3,19 +3,17 @@ import os
 import numpy as np
 import cv2
 from datetime import datetime
-# from tensorflow.keras.applications.resnet_v2 import preprocess_input
-# from tensorflow.keras.applications.vgg16 import preprocess_input 
-from tensorflow.keras.applications.resnet import preprocess_input 
+from tensorflow.keras.applications.resnet_v2 import preprocess_input as resnetv2_preprocess
+from tensorflow.keras.applications.vgg16 import preprocess_input as vgg16_preprocess
+from tensorflow.keras.applications.resnet import preprocess_input as resnet_preprocess
 from tensorflow.keras.layers import Input, Dense, Dropout, GlobalAveragePooling2D, Lambda, GaussianNoise, BatchNormalization, Flatten, GlobalMaxPooling2D, Reshape, Layer, MaxPooling2D
 from tensorflow.keras.models import Model
 from tensorflow.keras.metrics import Precision, Recall, F1Score
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
-from utils import SpatialPyramidPooling, GaussianBlurLayer
+from utils import SpatialPyramidPooling
 from vit_keras import vit
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2' 
-
-
     
 gpus = tf.config.experimental.list_physical_devices('GPU')
 if gpus:
@@ -81,7 +79,7 @@ def preprocess_image(image, label):
 
 
 # Model definition with preprocessing included
-def build_model(num_classes):
+def build_model(num_classes, model_name):
 
     # with tf.device('/cpu:0'):
     data_augmentation = tf.keras.Sequential([tf.keras.layers.RandomBrightness(0.2, seed=123),
@@ -95,21 +93,30 @@ def build_model(num_classes):
 
     ])
 
-    # base_model = tf.keras.applications.resnet_v2.ResNet50V2(input_shape=(160, 160, 3), include_top=False, weights='imagenet')
-    base_model = tf.keras.applications.resnet50.ResNet50(input_shape=(192, 192, 3), include_top=False, weights='imagenet')
-    # base_model = tf.keras.applications.vgg16.VGG16(input_shape=(160, 160, 3), include_top=False, weights='imagenet')
+    if model_name == 'resnetv2':
+        base_model = tf.keras.applications.resnet50.ResNet50(input_shape=(192, 192, 3), include_top=False, weights='imagenet')
+        preprocess_input = resnetv2_preprocess
+    elif model_name == 'resnet':
+        base_model = tf.keras.applications.resnet_v2.ResNet50V2(input_shape=(160, 160, 3), include_top=False, weights='imagenet')
+        preprocess_input = resnet_preprocess
+    elif model_name == 'vgg':
+        base_model = tf.keras.applications.vgg16.VGG16(input_shape=(160, 160, 3), include_top=False, weights='imagenet')
+        preprocess_input = vgg16_preprocess
+
     # base_model = vit.vit_b16(
     #     image_size = 192,
     #     pretrained = True,
     #     include_top = False,
     #     pretrained_top = False,
     #     classes = num_classes)
+
     base_model.trainable = False  # Freeze base model
 
     inputs = Input(shape=(192,192,3))
-    inputs = GaussianBlurLayer(kernel_size=(5, 5), sigma=0, input_shape=(192, 192, 3))(inputs)
-    aug_inputs = data_augmentation(inputs)
-    x = preprocess_input(aug_inputs)  # Preprocessing for Resnet
+    x = GaussianBlurLayer(kernel_size=(5, 5), sigma=0, input_shape=(192, 192, 3))(inputs)
+    x = preprocess_input(x)  # Preprocessing for Resnet
+    x = data_augmentation(x)
+
     x = base_model(x, training=False)
     x = GlobalAveragePooling2D()(x)
     # x = SpatialPyramidPooling(pool_list=[1, 2, 4])(x) 
@@ -124,7 +131,7 @@ def build_model(num_classes):
     x = Dropout(0.3)(x)
     outputs = Dense(num_classes, activation='softmax')(x)
     
-    model = Model(inputs, outputs, name="resnet50V2_based_model")
+    model = Model(inputs, outputs, name=model_name)
 
     # optimizer = RMSprop(learning_rate=0.00001)  # Lower learning rate
     optimizer = tf.keras.optimizers.legacy.Adam(learning_rate=0.001)
@@ -176,7 +183,7 @@ if __name__ == "__main__":
                 labels='inferred',
                 label_mode='categorical',
                 color_mode='rgb',
-                batch_size=64,
+                batch_size=128,
                 image_size = (192,256),
                 shuffle=True,
                 seed=123,
@@ -188,7 +195,8 @@ if __name__ == "__main__":
     class_weights = {0: 0.6150882051899572, 1: 0.6836645921167102, 2: 0.6699455702013247, 3: 1.2103548367987678, 4: 3.732553891121666, 5: 16.025098039215685, 6: 15.213700670141474, 7: 16.92792046396023, 8: 14.480510276399716, 9: 3.653137850885035, 10: 1.2264105642256902, 11: 0.6618294895050532, 12: 0.6805675837719006, 13: 0.6319044968144987, 14: 0.4927766924728071, 15: 0.7405313326809467, 16: 0.49096501345636295}
     print("Class weights for multi classification:", class_weights)
 
-    model = build_model(17)
+    model_name = 'resnetv2'
+    model = build_model(17, model_name)
     model.summary()
 
     checkpoint_path = f"../../saved_models/angle/{model.name}_{ts}"

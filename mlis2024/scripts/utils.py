@@ -104,7 +104,7 @@ def restructuring_data(load_original, is_augment):
     data.loc[data['speed'] > 1, 'speed'] = 0
     
     image_dir = '../../training_data/training_data/'
-    angle_class_dir = '../../data/angle_class_aug_data'
+    angle_class_dir = '../../data/angle_class_data'
     speed_class_dir = '../../data/speed_class_data'
 
     if load_original:
@@ -147,12 +147,14 @@ class GaussianBlurLayer(Layer):
     def call(self, inputs):
         # Wrap the cv2 GaussianBlur operation in tf.py_function to ensure compatibility with TensorFlow tensors
         def blur_function(image):
+            if not isinstance(image, np.ndarray):
+                print("Image is not a numpy array. Attempting conversion.")
             # image is a numpy array here
             blurred_image = cv2.GaussianBlur(image, self.kernel_size, self.sigma)
             return blurred_image
 
         # Apply the blur function on each input
-        blurred_inputs = tf.map_fn(lambda img: tf.py_function(blur_function, [img], tf.float32), inputs, fn_output_signature=tf.float32)
+        blurred_inputs = tf.map_fn(lambda img: tf.numpy_function(blur_function, [img], tf.float32), inputs, fn_output_signature=tf.float32)
         blurred_inputs.set_shape(inputs.shape)  # Ensure output shape is set correctly
         return blurred_inputs
 
@@ -163,8 +165,6 @@ class GaussianBlurLayer(Layer):
             'sigma': self.sigma,
         })
         return config
-
-import tensorflow.keras.backend as K
 
 class SpatialPyramidPooling(Layer):
 	"""Spatial pyramid pooling layer for 2D inputs.
@@ -281,7 +281,7 @@ class SpatialPyramidPooling(Layer):
 
 if __name__ == "__main__":
     load_original = True
-    is_augment = True
+    is_augment = False
     restructuring_data(load_original, is_augment)
 
 # def get_merged_df(data_dir, norm_csv_path):
