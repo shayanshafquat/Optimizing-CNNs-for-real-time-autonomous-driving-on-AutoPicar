@@ -12,8 +12,9 @@ from tensorflow.keras import Sequential
 from tensorflow.keras.models import Model
 from tensorflow.keras.metrics import Precision, Recall, F1Score
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
-from utils import SpatialPyramidPooling, GaussianBlurLayer, get_class_weights_for_angle_model
+from utils import SpatialPyramidPooling, GaussianBlurLayer, get_class_weights_for_angle_model, RandomGaussianBlur
 from vit_keras import vit
+from tensorflow.keras.utils import get_custom_objects
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2' 
     
@@ -150,7 +151,8 @@ def build_model(num_classes, model_name):
     base_model.trainable = False
 
     # Include Gaussian blur and preprocessing
-    model.add(GaussianBlurLayer(kernel_size=(3, 3), sigma=0))  # Custom Gaussian blur layer
+    # model.add(GaussianBlurLayer(kernel_size=(3, 3), sigma=0))  # Custom Gaussian blur layer
+    model.add(RandomGaussianBlur(5,0.9))
     model.add(tf.keras.layers.Lambda(preprocess_input))  # Preprocessing using Lambda layer
 
     # Add the base model
@@ -301,6 +303,7 @@ if __name__ == "__main__":
 
     model_name = 'resnetv2'
     model = build_model(17, model_name)
+    get_custom_objects().update({'RandomGaussianBlur': RandomGaussianBlur})
     model.summary()
 
     checkpoint_path = f"../../saved_models/angle/{model.name}_{ts}"
