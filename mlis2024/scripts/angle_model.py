@@ -1,12 +1,14 @@
 import tensorflow as tf
 import os
 import numpy as np
+import random
 import cv2
 from datetime import datetime
 from tensorflow.keras.applications.resnet_v2 import preprocess_input as resnetv2_preprocess
 from tensorflow.keras.applications.vgg16 import preprocess_input as vgg16_preprocess
 from tensorflow.keras.applications.resnet import preprocess_input as resnet_preprocess
 from tensorflow.keras.layers import Input, Dense, Dropout, GlobalAveragePooling2D, Lambda, GaussianNoise, BatchNormalization, Flatten, GlobalMaxPooling2D, Reshape, Layer, MaxPooling2D
+from tensorflow.keras import Sequential
 from tensorflow.keras.models import Model
 from tensorflow.keras.metrics import Precision, Recall, F1Score
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
@@ -41,11 +43,55 @@ tf.random.set_seed(123)
 #         # image = tf.image.random_flip_left_right(image, seed=123)
 #         return tf.cast(image, tf.float32), label
 
+# def preprocess_image(image, label):
+#     angles = tf.constant([100.0, 105.0, 110.0, 115.0, 120.0, 125.0, 130.0, 50.0, 55.0, 60.0, 65.0, 70.0, 75.0, 80.0, 85.0, 90.0, 95.0], dtype=tf.float32)
+#     mirrored_angles = tf.constant([80.0, 75.0, 70.0, 65.0, 60.0, 55.0, 50.0, 130.0, 125.0, 120.0, 115.0, 110.0, 105.0, 100.0, 95.0, 90.0, 85.0], dtype=tf.float32)
+#     image = tf.image.resize(image, [192, 192]) 
+#     image = tf.image.random_flip_left_right(image, seed=123)
+
+#     def adjust_label(label):
+#         # Assuming label is a batch of one-hot encoded labels with shape [batch_size, num_classes]
+#         # Find the indices of the max value in each row (highest probability class)
+#         label_indices = tf.argmax(label, axis=-1)
+        
+#         # For each label index, find the corresponding angle and then find the mirrored angle's index
+#         angles_batch = tf.gather(angles, label_indices)
+        
+#         # This operation needs to be adapted to handle a batch of angles
+#         # Use tf.map_fn to apply the finding operation across the batch
+#         def find_mirrored_index(angle):
+#             # Find the index of this angle in the mirrored_angles list
+#             mirrored_index = tf.where(tf.equal(mirrored_angles, angle))
+#             return tf.reshape(mirrored_index, [-1])[0]
+
+#         mirrored_indices = tf.map_fn(find_mirrored_index, angles_batch, dtype=tf.int64)
+        
+#         # Create new one-hot encoded labels based on the mirrored indices
+#         new_labels = tf.one_hot(mirrored_indices, depth=tf.size(angles), dtype=label.dtype)
+        
+#         return new_labels
+
+#     flipped_image = tf.image.flip_left_right(image)
+#     is_flipped = tf.reduce_any(flipped_image != image)
+    
+#     # Use tf.cond to conditionally adjust the label, ensuring the output matches the input type
+#     label = tf.cond(is_flipped, lambda: adjust_label(label), lambda: tf.identity(label))
+    
+#     return tf.cast(image, tf.float32), label
+
+
 def preprocess_image(image, label):
-    angles = tf.constant([100.0, 105.0, 110.0, 115.0, 120.0, 125.0, 130.0, 50.0, 55.0, 60.0, 65.0, 70.0, 75.0, 80.0, 85.0, 90.0, 95.0], dtype=tf.float32)
-    mirrored_angles = tf.constant([80.0, 75.0, 70.0, 65.0, 60.0, 55.0, 50.0, 130.0, 125.0, 120.0, 115.0, 110.0, 105.0, 100.0, 95.0, 90.0, 85.0], dtype=tf.float32)
+    # Define the angles tensor
+    angles = tf.constant([65.0, 50.0, 75.0, 115.0, 130.0, 85.0, 105.0, 120.0, 95.0, 80.0, 110.0, 125.0, 90.0, 100.0, 60.0, 70.0, 55.0], dtype=tf.float32)
+
+    # Calculate mirrored angles
+    mirrored_angles = 180 - tf.cast(angles, tf.float32)
+
     image = tf.image.resize(image, [192, 192]) 
-    image = tf.image.random_flip_left_right(image, seed=123)
+    original_image = tf.identity(image)  # Preserve the original image for comparison
+
+    if random.random() < 0.2:
+        image = tf.image.flip_left_right(image)
 
     def adjust_label(label):
         # Assuming label is a batch of one-hot encoded labels with shape [batch_size, num_classes]
@@ -62,83 +108,122 @@ def preprocess_image(image, label):
             mirrored_index = tf.where(tf.equal(mirrored_angles, angle))
             return tf.reshape(mirrored_index, [-1])[0]
 
-        mirrored_indices = tf.map_fn(find_mirrored_index, angles_batch, dtype=tf.int64)
+        mirrored_indices = tf.map_fn(find_mirrored_index, angles_batch, fn_output_signature=tf.int64)
         
         # Create new one-hot encoded labels based on the mirrored indices
         new_labels = tf.one_hot(mirrored_indices, depth=tf.size(angles), dtype=label.dtype)
         
         return new_labels
 
-    flipped_image = tf.image.flip_left_right(image)
-    is_flipped = tf.reduce_any(flipped_image != image)
-    
+    # Check if flipping occurred
+    is_flipped = tf.reduce_any(tf.not_equal(original_image, image))
+
     # Use tf.cond to conditionally adjust the label, ensuring the output matches the input type
     label = tf.cond(is_flipped, lambda: adjust_label(label), lambda: tf.identity(label))
     
     return tf.cast(image, tf.float32), label
 
-
 # Model definition with preprocessing included
 def build_model(num_classes, model_name):
-
     # with tf.device('/cpu:0'):
-    data_augmentation = tf.keras.Sequential([tf.keras.layers.RandomBrightness(0.2, seed=123),
-                                             tf.keras.layers.RandomContrast(0.2, seed=123),
-                                            # tf.keras.layers.RandomFlip('horizontal', seed=123),
-                                            # tf.keras.layers.CenterCrop(160,160),
-                                            # tf.keras.layers.RandomZoom(0.1, fill_mode='nearest', seed=123),
-                                            tf.keras.layers.GaussianNoise(0.1),
-                                            # tf.keras.layers.Lambda(lambda x: tf.image.rgb_to_hsv(x)),
-                                            # tf.keras.layers.RandomRotation(0.05, fill_mode='nearest', seed=123),
+    # Initialize the model as a Sequential model
+    model = Sequential(name = model_name)
 
-    ])
+    # Data augmentation layers
+    model.add(Input(shape=(192, 192, 3)))  # Define input shape
+    model.add(tf.keras.layers.RandomBrightness(0.2, seed=123))
+    model.add(tf.keras.layers.RandomContrast(0.2, seed=123))
+    model.add(tf.keras.layers.GaussianNoise(1))
 
+    # Select the base model based on the provided model_name
     if model_name == 'resnetv2':
-        base_model = tf.keras.applications.resnet50.ResNet50(input_shape=(192, 192, 3), include_top=False, weights='imagenet')
-        preprocess_input = resnetv2_preprocess
+        base_model = tf.keras.applications.ResNet50(input_shape=(192, 192, 3), include_top=False, weights='imagenet')
+        preprocess_input = tf.keras.applications.resnet50.preprocess_input
     elif model_name == 'resnet':
-        base_model = tf.keras.applications.resnet_v2.ResNet50V2(input_shape=(160, 160, 3), include_top=False, weights='imagenet')
-        preprocess_input = resnet_preprocess
+        base_model = tf.keras.applications.ResNet50V2(input_shape=(160, 160, 3), include_top=False, weights='imagenet')
+        preprocess_input = tf.keras.applications.resnet_v2.preprocess_input
     elif model_name == 'vgg':
-        base_model = tf.keras.applications.vgg16.VGG16(input_shape=(160, 160, 3), include_top=False, weights='imagenet')
-        preprocess_input = vgg16_preprocess
+        base_model = tf.keras.applications.VGG16(input_shape=(160, 160, 3), include_top=False, weights='imagenet')
+        preprocess_input = tf.keras.applications.vgg16.preprocess_input
 
-    # base_model = vit.vit_b16(
-    #     image_size = 192,
-    #     pretrained = True,
-    #     include_top = False,
-    #     pretrained_top = False,
-    #     classes = num_classes)
+    # Set the base model to non-trainable (freeze layers)
+    base_model.trainable = False
 
-    base_model.trainable = False  # Freeze base model
+    # Include Gaussian blur and preprocessing
+    model.add(GaussianBlurLayer(kernel_size=(3, 3), sigma=0))  # Custom Gaussian blur layer
+    model.add(tf.keras.layers.Lambda(preprocess_input))  # Preprocessing using Lambda layer
 
-    inputs = Input(shape=(192,192,3))
-    x = data_augmentation(inputs)
-    x = GaussianBlurLayer(kernel_size=(5, 5), sigma=0, input_shape=(192, 192, 3))(x)
-    x = preprocess_input(x) # Preprocessing for Resnet
-
-    x = base_model(x, training=False)
-    x = GlobalAveragePooling2D()(x)
-    # x = SpatialPyramidPooling(pool_list=[1, 2, 4])(x) 
-    # x = GlobalMaxPooling2D()(x)
-    # x = Flatten()(x)
-    # x = Dropout(0.2)(x)
-    x = Dense(1024, activation='relu')(x)
-    x = BatchNormalization()(x)
-    x = Dropout(0.3)(x)
-    x = Dense(512, activation='relu')(x)
-    x = BatchNormalization()(x)
-    x = Dropout(0.3)(x)
-    outputs = Dense(num_classes, activation='softmax')(x)
+    # Add the base model
+    model.add(base_model)
+    model.add(GlobalAveragePooling2D())  # Global average pooling layer
     
-    model = Model(inputs, outputs, name=model_name)
+    # Output layer
+    model.add(Dense(num_classes, activation='softmax'))
 
-    # optimizer = RMSprop(learning_rate=0.00001)  # Lower learning rate
-    optimizer = tf.keras.optimizers.legacy.Adam(learning_rate=0.001)
-
+    # Compile the model
+    optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
     model.compile(optimizer=optimizer,
-                  loss='categorical_focal_crossentropy',
+                  loss='categorical_focal_crossentropy',  # Make sure you have this loss function implemented or available
                   metrics=['accuracy', F1Score(), tf.metrics.MeanSquaredError(), tf.keras.metrics.TopKCategoricalAccuracy(k=3, name='top_3_accuracy')])
+    
+    
+    # data_augmentation = tf.keras.Sequential([tf.keras.layers.RandomBrightness(0.2, seed=123),
+    #                                          tf.keras.layers.RandomContrast(0.2, seed=123),
+    #                                         # tf.keras.layers.RandomFlip('horizontal', seed=123),
+    #                                         # tf.keras.layers.CenterCrop(160,160),
+    #                                         # tf.keras.layers.RandomZoom(0.1, fill_mode='nearest', seed=123),
+    #                                         tf.keras.layers.GaussianNoise(0.1),
+    #                                         # tf.keras.layers.Lambda(lambda x: tf.image.rgb_to_hsv(x)),
+    #                                         # tf.keras.layers.RandomRotation(0.05, fill_mode='nearest', seed=123),
+
+    # ])
+
+    # if model_name == 'resnetv2':
+    #     base_model = tf.keras.applications.resnet50.ResNet50(input_shape=(192, 192, 3), include_top=False, weights='imagenet')
+    #     preprocess_input = resnetv2_preprocess
+    # elif model_name == 'resnet':
+    #     base_model = tf.keras.applications.resnet_v2.ResNet50V2(input_shape=(160, 160, 3), include_top=False, weights='imagenet')
+    #     preprocess_input = resnet_preprocess
+    # elif model_name == 'vgg':
+    #     base_model = tf.keras.applications.vgg16.VGG16(input_shape=(160, 160, 3), include_top=False, weights='imagenet')
+    #     preprocess_input = vgg16_preprocess
+
+    # # base_model = vit.vit_b16(
+    # #     image_size = 192,
+    # #     pretrained = True,
+    # #     include_top = False,
+    # #     pretrained_top = False,
+    # #     classes = num_classes)
+
+    # base_model.trainable = False  # Freeze base model
+
+    # inputs = Input(shape=(192,192,3))
+    # x = data_augmentation(inputs)
+    # x = GaussianBlurLayer(kernel_size=(3, 3), sigma=0, input_shape=(192, 192, 3))(x)
+    # x = preprocess_input(x) # Preprocessing for Resnet
+
+    # x = base_model(x, training=False)
+    # x = GlobalAveragePooling2D()(x)
+    # # x = SpatialPyramidPooling(pool_list=[1, 2, 4])(x) 
+    # # x = GlobalMaxPooling2D()(x)
+    # # x = Flatten()(x)
+    # # x = Dropout(0.2)(x)
+    # # x = Dense(1024, activation='relu')(x)
+    # # x = BatchNormalization()(x)
+    # # x = Dropout(0.3)(x)
+    # # x = Dense(512, activation='relu')(x)
+    # # x = BatchNormalization()(x)
+    # # x = Dropout(0.3)(x)
+    # outputs = Dense(num_classes, activation='softmax')(x)
+    
+    # model = Model(inputs, outputs, name=model_name)
+
+    # # optimizer = RMSprop(learning_rate=0.00001)  # Lower learning rate
+    # optimizer = tf.keras.optimizers.legacy.Adam(learning_rate=0.001)
+
+    # model.compile(optimizer=optimizer,
+    #               loss='categorical_focal_crossentropy',
+    #               metrics=['accuracy', F1Score(), tf.metrics.MeanSquaredError(), tf.keras.metrics.TopKCategoricalAccuracy(k=3, name='top_3_accuracy')])
     return model
 
 # Fine-tuning function
@@ -154,18 +239,34 @@ def fine_tune_model(model, checkpoint_path):
             layer.trainable = False
 
     # optimizer = RMSprop(learning_rate=0.00001)  # Lower learning rate
-    optimizer = tf.keras.optimizers.legacy.Adam(learning_rate=0.00001)
+    optimizer = tf.keras.optimizers.legacy.Adam(learning_rate=0.00003)
     # Recompile the model with a lower learning rate
     model.compile(optimizer=optimizer,
                   loss='categorical_focal_crossentropy',
                   metrics=['accuracy', F1Score(), tf.metrics.MeanSquaredError(), tf.keras.metrics.TopKCategoricalAccuracy(k=3, name='top_3_accuracy')])
     model.summary()
 
+class_names = ['65.0', '50.0', '75.0', '115.0', '130.0', '85.0', '105.0', '120.0', '95.0', '80.0', '110.0', '125.0', '90.0', '100.0', '60.0', '70.0', '55.0']
+
+# # Create TensorFlow datasets from directory
+# def create_datasets(directory, subset):
+#     return tf.keras.utils.image_dataset_from_directory(
+#         directory,
+#         labels='inferred',
+#         label_mode='categorical',
+#         class_names=['65.0', '50.0', '75.0', '115.0', '130.0', '85.0', '105.0', '120.0', '95.0', '80.0', '110.0', '125.0', '90.0', '100.0', '60.0', '70.0', '55.0'],
+#         color_mode='rgb',
+#         batch_size=128,
+#         image_size=(192, 256),
+#         shuffle=True,
+#         seed=123,
+#         validation_split=0.15,
+#         subset=subset).map(preprocess_image).cache().prefetch(tf.data.AUTOTUNE)
 
 if __name__ == "__main__":
     directory = '../../data/angle_class_data'
     finetuning = False
-    
+
     train_ds = tf.keras.utils.image_dataset_from_directory(
                 directory,
                 labels='inferred',
@@ -205,7 +306,7 @@ if __name__ == "__main__":
     checkpoint_path = f"../../saved_models/angle/{model.name}_{ts}"
     model_checkpoint_callback = ModelCheckpoint(
         checkpoint_path,
-        monitor='val_loss',
+        monitor='val_mean_squared_error',
         verbose=1,
         save_best_only=True,
         save_weights_only=False,
@@ -215,7 +316,7 @@ if __name__ == "__main__":
     if not finetuning:
         print("Base Learning")
         history = model.fit(train_ds,
-                epochs=15,
+                epochs=5,
                 validation_data=val_ds,
                 callbacks=[model_checkpoint_callback],
                 verbose=1, class_weight=class_weights)
@@ -226,7 +327,7 @@ if __name__ == "__main__":
     # Fine-tuning
     fine_tune_model(model, checkpoint_path)
     # Fine-tuning training with a smaller learning rate
-    fine_tune_epochs = 8
+    fine_tune_epochs = 5
 
     history_finetune = model.fit(
                             train_ds,
