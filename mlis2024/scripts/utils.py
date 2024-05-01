@@ -304,8 +304,61 @@ class SpatialPyramidPooling(Layer):
 
 		return outputs
 
+
+
+class RandomGaussianBlur(Layer):
+    def __init__(self, kernel_size, factor, **kwargs):
+        super(RandomGaussianBlur, self).__init__(**kwargs)
+        self.kernel_size = kernel_size
+        self.factor = factor  # Assuming factor is either a float or a tuple of floats.
+
+    def get_random_transformation(self, img_shape):
+        # Calculate random factor, ensuring numerical stability
+        if isinstance(self.factor, tuple):
+            factor = tf.random.uniform((), self.factor[0], self.factor[1])
+        else:
+            factor = self.factor
+
+        # Prevent division by zero or near-zero factors which might lead to numerical issues
+        factor = tf.maximum(factor, K.epsilon())
+
+        # Generate the Gaussian kernels
+        kernel_v = self.get_kernel(factor, self.kernel_size)
+        kernel_h = tf.transpose(kernel_v)
+
+        kernel_v = tf.reshape(kernel_v, [self.kernel_size, 1, 1, 1])
+        kernel_h = tf.reshape(kernel_h, [1, self.kernel_size, 1, 1])
+        return kernel_v, kernel_h
+
+    def call(self, inputs):
+        blur_v, blur_h = self.get_random_transformation(tf.shape(inputs)[-3:])
+        num_channels = tf.shape(inputs)[-1]
+        blur_v = tf.tile(blur_v, [1, 1, num_channels, 1])
+        blur_h = tf.tile(blur_h, [1, 1, num_channels, 1])
+
+        # Apply the blurring kernels
+        blurred = tf.nn.depthwise_conv2d(inputs, blur_h, strides=[1, 1, 1, 1], padding="SAME")
+        blurred = tf.nn.depthwise_conv2d(blurred, blur_v, strides=[1, 1, 1, 1], padding="SAME")
+        return blurred
+
+    @staticmethod
+    def get_kernel(factor, filter_size):
+        """Generates a Gaussian kernel for use in RandomGaussianBlur."""
+        range = tf.range(-filter_size // 2 + 1, filter_size // 2 + 1, dtype=tf.float32)
+        gaussian_kernel = tf.exp(-0.5 * (range / factor) ** 2)
+        gaussian_kernel = gaussian_kernel / tf.reduce_sum(gaussian_kernel)
+        return gaussian_kernel
+
+    def get_config(self):
+        config = super(RandomGaussianBlur, self).get_config()
+        config.update({
+            'kernel_size': self.kernel_size,
+            'factor': self.factor
+        })
+        return config
+    
 if __name__ == "__main__":
-    load_original = True
+    load_original = False
     is_augment = False
     restructuring_data(load_original, is_augment)
 
