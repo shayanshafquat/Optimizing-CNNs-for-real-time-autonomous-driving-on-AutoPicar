@@ -6,10 +6,12 @@ from datetime import datetime
 from tensorflow.keras.applications.vgg16 import preprocess_input 
 # from tensorflow.keras.applications.resnet50 import preprocess_input
 from tensorflow.keras.layers import Input, Dense, Dropout, GlobalAveragePooling2D, Lambda, GaussianNoise, BatchNormalization, Flatten
+from tensorflow.keras import Sequential
 from tensorflow.keras.models import Model
 from tensorflow.keras.metrics import Precision, Recall, F1Score
 from tensorflow.keras.callbacks import ModelCheckpoint
-from utils import SpatialPyramidPooling, GaussianBlurLayer
+from utils import SpatialPyramidPooling, GaussianBlurLayer, RandomGaussianBlur
+from tensorflow.keras.utils import get_custom_objects
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2' 
 
@@ -34,45 +36,64 @@ def preprocess_image(image, label):
         return tf.cast(image, tf.float32), label
 
 # Model definition with preprocessing included
-def build_model(num_classes):
+def build_model(num_classes, model_name, learning_rate):
 
-    # with tf.device('/cpu:0'):
-    data_augmentation = tf.keras.Sequential([tf.keras.layers.RandomBrightness(0.2, seed=123),
-                                             tf.keras.layers.RandomContrast(0.2, seed=123),
-                                            tf.keras.layers.RandomFlip('horizontal', seed=123),
-                                            tf.keras.layers.CenterCrop(160,160),
-                                            # tf.keras.layers.GaussianNoise(0.2),
-                                            # tf.keras.layers.RandomZoom(0.1, fill_mode='reflect', seed=123),
-                                            # tf.keras.layers.RandomRotation(0.05, fill_mode='nearest', seed=123),
 
-    ])
+    model = Sequential(name = model_name)
 
-    # base_model = tf.keras.applications.MobileNetV2(input_shape=(160, 160, 3), include_top=False, weights='imagenet')
-    # base_model = tf.keras.applications.ResNet50(input_shape=(160, 160, 3), include_top=False, weights='imagenet')
-    base_model = tf.keras.applications.vgg16.VGG16(input_shape=(160, 160, 3), include_top=False, weights='imagenet')
+    # Data augmentation layers
+    model.add(Input(shape=(192, 256, 3)))  # Define input shape
+    model.add(tf.keras.layers.RandomBrightness(0.2, seed=123))
+    model.add(tf.keras.layers.RandomContrast(0.2, seed=123))
+    # model.add(tf.keras.layers.GaussianNoise(10))
+    model.add(tf.keras.layers.CenterCrop(192,192))
+    model.add(RandomGaussianBlur(5,0.2))
 
+    # # with tf.device('/cpu:0'):
+    # data_augmentation = tf.keras.Sequential([tf.keras.layers.RandomBrightness(0.2, seed=123),
+    #                                          tf.keras.layers.RandomContrast(0.2, seed=123),
+    #                                         tf.keras.layers.RandomFlip('horizontal', seed=123),
+    #                                         tf.keras.layers.CenterCrop(160,160),
+    #                                         # tf.keras.layers.GaussianNoise(0.2),
+    #                                         # tf.keras.layers.RandomZoom(0.1, fill_mode='reflect', seed=123),
+    #                                         # tf.keras.layers.RandomRotation(0.05, fill_mode='nearest', seed=123),
+
+    # ])
+
+    # Select the base model based on the provided model_name
+    if model_name == 'resnetv2':
+        base_model = tf.keras.applications.ResNet50(input_shape=(192, 192, 3), include_top=False, weights='imagenet')
+        preprocess_input = tf.keras.applications.resnet50.preprocess_input
+    if model_name == 'mobilenetv2':
+        base_model = tf.keras.applications.MobileNetV2(input_shape=(192, 192, 3), include_top=False, weights='imagenet')
+        preprocess_input = tf.keras.applications.mobilenet_v2.preprocess_input
+    elif model_name == 'resnet':
+        base_model = tf.keras.applications.ResNet50V2(input_shape=(160, 160, 3), include_top=False, weights='imagenet')
+        preprocess_input = tf.keras.applications.resnet_v2.preprocess_input
+    elif model_name == 'vgg':
+        base_model = tf.keras.applications.VGG16(input_shape=(160, 160, 3), include_top=False, weights='imagenet')
+        preprocess_input = tf.keras.applications.vgg16.preprocess_input
+
+    # Add the base model
     base_model.trainable = False  # Freeze base model
+    model.add(tf.keras.layers.Lambda(preprocess_input))  # Preprocessing using Lambda layer
+    model.add(base_model)
 
-  
-    inputs = Input(shape=(160,192,3))
-    inputs = GaussianBlurLayer(kernel_size=(5, 5), sigma=0, input_shape=(160, 192, 3))(inputs)
-    aug_inputs = data_augmentation(inputs)
-    x = preprocess_input(aug_inputs)  # Preprocessing for MobileNetV2
-    x = base_model(x, training=False)
-    x = GlobalAveragePooling2D()(x)
-    # x = SpatialPyramidPooling(pool_list=[1, 2, 4])(x) 
-    # x = Dropout(0.2)(x)
-    x = Dense(512, activation='relu')(x)
-    x = BatchNormalization()(x)
-    x = Dropout(0.5)(x)
-    x = Dense(256, activation='relu')(x)
-    x = BatchNormalization()(x)
-    x = Dropout(0.5)(x)
-    outputs = Dense(num_classes, activation='sigmoid')(x)
-    
-    model = Model(inputs, outputs, name="VGG16_based_model")
+    # Additional layer configurations - Uncomment as needed
+    model.add(GlobalAveragePooling2D())  # Global average pooling layer
+    # model.add(SpatialPyramidPooling(pool_list=[1, 2, 4]))
+    # model.add(GlobalMaxPooling2D())
+    # model.add(Flatten())
+    model.add(Dropout(0.2))
+    model.add(Dense(512, activation='relu'))
+    model.add(BatchNormalization())
+    model.add(Dropout(0.3))
+    # model.add(Dense(512, activation='relu'))
+    # model.add(BatchNormalization())
+    # model.add(Dropout(0.3))
+    # Output layer
 
-
+    model.add(Dense(num_classes, activation='sigmoid'))
     # optimizer = RMSprop(learning_rate=0.00001)  # Lower learning rate
     optimizer = tf.keras.optimizers.legacy.Adam(learning_rate=0.001)
 
@@ -82,24 +103,26 @@ def build_model(num_classes):
     return model
 
 # Fine-tuning function
-def fine_tune_model(model, checkpoint_path):
+def fine_tune_model(model, checkpoint_path, learning_rate, layers_to_tune):
     # Unfreeze all layers in base model
     print("Finetuning ...")
-
-    model.layers[4].trainable = True
-    for layer in model.layers[4].layers[:-20]:
+    learning_rate /= 10 
+    print(f"Learning Rate:{learning_rate}")
+    model.layers[5].trainable = True
+    for layer in model.layers[5].layers[:-1*layers_to_tune]:
         layer.trainable = False
-    for layer in model.layers[4].layers[:-20]:
+    for layer in model.layers[5].layers[:]:  # check for this
         if isinstance(layer, tf.keras.layers.BatchNormalization):
             layer.trainable = False
 
     # optimizer = RMSprop(learning_rate=0.00001)  # Lower learning rate
-    optimizer = tf.keras.optimizers.legacy.Adam(learning_rate=0.00005)
+    optimizer = tf.keras.optimizers.legacy.Adam(learning_rate=learning_rate)
     # Recompile the model with a lower learning rate
     model.compile(optimizer=optimizer,
                   loss='binary_focal_crossentropy',
                   metrics=['accuracy', F1Score(), tf.metrics.MeanSquaredError()])
     model.summary()
+    return learning_rate
 
 def calculate_class_weights_for_binary(dataset):
     # Initialize counts for each label
@@ -126,6 +149,8 @@ if __name__ == "__main__":
     
     directory = '../../data/speed_class_data'
     finetuning = False
+    learning_rate = 0.001
+    num_fine_tuning = 2
 
     train_ds = tf.keras.utils.image_dataset_from_directory(
                 directory,
@@ -133,7 +158,7 @@ if __name__ == "__main__":
                 label_mode='binary',
                 color_mode='rgb',
                 batch_size=128,
-                image_size = (160,192),
+                image_size = (192,256),
                 shuffle=True,
                 seed=123,
                 validation_split=0.15,
@@ -145,7 +170,7 @@ if __name__ == "__main__":
                 label_mode='binary',
                 color_mode='rgb',
                 batch_size=64,
-                image_size = (160,192),
+                image_size = (192,256),
                 shuffle=True,
                 seed=123,
                 validation_split=0.15,
@@ -156,14 +181,16 @@ if __name__ == "__main__":
     class_weights = calculate_class_weights_for_binary(train_ds)
     print("Class weights for binary classification:", class_weights)
 
-    model = build_model(1)
+    model_name = 'mobilenetv2'
+    model = build_model(1, model_name, learning_rate)
+    get_custom_objects().update({'RandomGaussianBlur': RandomGaussianBlur})
     model.summary()
 
     checkpoint_path = f"../../saved_models/speed/{model.name}_{ts}"
 
     model_checkpoint_callback = ModelCheckpoint(
         checkpoint_path,
-        monitor='val_loss',
+        monitor='val_mean_squared_error',
         verbose=1,
         save_best_only=True,
         save_weights_only=False,
@@ -173,27 +200,29 @@ if __name__ == "__main__":
     if not finetuning:
         print("Base Learning")
         history = model.fit(train_ds,
-                             epochs=10,
+                             epochs=30,
                                validation_data=val_ds,
                                  callbacks=[model_checkpoint_callback],
                                    verbose=1,
                                    class_weight=class_weights)
 
-    # Load the best model for fine-tuning
-    model = tf.keras.models.load_model(checkpoint_path)
 
-    # Fine-tuning
-    fine_tune_model(model, checkpoint_path)
-    # Fine-tuning training with a smaller learning rate
-    fine_tune_epochs = 15
-    total_epochs = fine_tune_epochs  # Initial epochs + fine-tune epochs
+    for i in range(num_fine_tuning):
+        # Load the best model for fine-tuning
+        model = tf.keras.models.load_model(checkpoint_path)
+        layers_to_tune = int((30)*(i+1))
+        # Fine-tuning
+        learning_rate = fine_tune_model(model, checkpoint_path, learning_rate, layers_to_tune)
+        # Fine-tuning training with a smaller learning rate
+        fine_tune_epochs = 15
+        total_epochs = fine_tune_epochs  # Initial epochs + fine-tune epochs
 
-    history_finetune = model.fit(
-                            train_ds,
-                            validation_data=val_ds,
-                            epochs=total_epochs,
-                            callbacks=[model_checkpoint_callback],
-                            verbose=1, class_weight=class_weights)
+        history_finetune = model.fit(
+                                train_ds,
+                                validation_data=val_ds,
+                                epochs=total_epochs,
+                                callbacks=[model_checkpoint_callback],
+                                verbose=1, class_weight=class_weights)
 
     # # Evaluate the fine-tuned model
     # evaluate_model(model, valid_generator)
