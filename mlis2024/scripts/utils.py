@@ -50,8 +50,8 @@ def tf_adjust_contrast(image):
 
 def save_original_images(angle_class_dir, speed_class_dir, image_dir, data):
     # Clear directories first
-    clear_directory(angle_class_dir)
-    clear_directory(speed_class_dir)
+    # clear_directory(angle_class_dir)
+    # clear_directory(speed_class_dir)
 
         # Create directories and save original images
     for _, row in data.iterrows():
@@ -95,8 +95,43 @@ def get_class_weights_for_angle_model(directory_path):
     # Use scikit-learn's compute_class_weight to calculate class weights
     weights = compute_class_weight(class_weight='balanced', classes=np.unique(y), y=y)
     class_weights = dict(enumerate(weights))
+
+    # Normalize the class weights
+    total = sum(class_weights.values())
+    normalized_class_weights = {k: v / total for k, v in class_weights.items()}
+
     print(class_counts)
-    return class_weights
+    print("Normalized class weights:", normalized_class_weights)
+    return normalized_class_weights
+
+def get_class_weights_for_speed_model(directory_path):
+    directory = directory_path
+    # Ensure we list only directories
+    class_names = ['0.0', '1.0']
+    # class_names = [dir_name for dir_name in os.listdir(directory) if os.path.isdir(os.path.join(directory, dir_name))]
+    class_counts = {}
+
+    for class_name in class_names:
+        class_dir = os.path.join(directory, class_name)
+        # Count only files, ignore subdirectories
+        class_counts[class_name] = len([item for item in os.listdir(class_dir) if os.path.isfile(os.path.join(class_dir, item))])
+
+    # Calculating class weights
+    classes = list(class_counts.keys())
+    # Convert class names to indices (necessary if using `compute_class_weight`)
+    class_indices = {class_name: index for index, class_name in enumerate(classes)}
+    y = [class_indices[class_name] for class_name, count in class_counts.items() for _ in range(count)]
+
+    # Use scikit-learn's compute_class_weight to calculate class weights
+    weights = compute_class_weight(class_weight='balanced', classes=np.unique(y), y=y)
+    class_weights = dict(enumerate(weights))
+    # Normalize the class weights
+    total = sum(class_weights.values())
+    normalized_class_weights = {k: v / total for k, v in class_weights.items()}
+
+    print(class_counts)
+    print("Normalized class weights:", normalized_class_weights)
+    return normalized_class_weights
 
     # # Apply brightness and contrast adjustments based on augmentation_intensity
     # for i in range(int((augmentation_intensity-1)/2)):
@@ -129,8 +164,8 @@ def restructuring_data(load_original, is_augment):
     data.loc[data['speed'] > 1, 'speed'] = 0
     
     image_dir = '../../training_data/training_data/'
-    angle_class_dir = '../../data/angle_class_data'
-    speed_class_dir = '../../data/speed_class_data'
+    angle_class_dir = '../../data/angle_class_data_new2'
+    speed_class_dir = '../../data/speed_class_data_new'
 
     if load_original:
         save_original_images(angle_class_dir, speed_class_dir, image_dir, data)
@@ -356,7 +391,24 @@ class RandomGaussianBlur(Layer):
             'factor': self.factor
         })
         return config
-    
+
+def categorical_focal_crossentropy(alpha, gamma=2.0):
+    """
+    Focal loss function for multi-class classification.
+    Args:
+        alpha (array-like): Array of shape (num_classes,) with class weights.
+        gamma (float): Focusing parameter for modulating factor.
+    Returns:
+        loss function
+    """
+    def focal_loss_fixed(y_true, y_pred):
+        epsilon = K.epsilon()
+        y_pred = K.clip(y_pred, epsilon, 1. - epsilon)
+        cross_entropy = -y_true * K.log(y_pred)
+        loss = alpha * K.pow(1 - y_pred, gamma) * cross_entropy
+        return K.sum(loss, axis=1)
+    return focal_loss_fixed
+
 if __name__ == "__main__":
     load_original = False
     is_augment = False

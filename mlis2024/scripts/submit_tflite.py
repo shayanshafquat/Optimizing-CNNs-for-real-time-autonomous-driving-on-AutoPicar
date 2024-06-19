@@ -4,11 +4,15 @@ import os
 import pandas as pd
 from datetime import datetime
 
-tflite_angle_path = '../../tflite_saved_models/angle/mobilenetv3_20240504_160.tflite'
-tflite_speed_path = '../../tflite_saved_models/speed/mobilenetv3_20240504_160.tflite'
+model_name = "mobilenetv2"
+ts = datetime.now().strftime('%Y%m%d')
+
+tflite_angle_path = '../../tflite_saved_models/angle/mobilenetv2_128_new2.tflite'
+tflite_speed_path = '../../tflite_saved_models/speed/mobilenetv2_20240505_128.tflite'
 
 angle_interpreter = tf.lite.Interpreter(tflite_angle_path)
 speed_interpreter = tf.lite.Interpreter(tflite_speed_path)
+
 angle_interpreter.allocate_tensors()
 speed_interpreter.allocate_tensors()
 
@@ -19,14 +23,21 @@ speed_input_details = speed_interpreter.get_input_details()
 speed_output_details = speed_interpreter.get_output_details()
 
 def preprocess(image):
-    im = tf.image.convert_image_dtype(image, tf.float32)
-    im = tf.image.resize(im, [160, 160])
+    # im = tf.image.convert_image_dtype(image, tf.float32)
+    im = tf.image.resize(image, [128, 128])
+    # if model_name == 'mobilenetv2':
+    #     preprocess_input = tf.keras.applications.mobilenet_v2.preprocess_input
+    # else:
+    #     preprocess_input = tf.keras.applications.mobilenet_v3.preprocess_input
+    # # Apply the specific preprocessing
+    # im = preprocess_input(im)
+
     im = tf.expand_dims(im, axis=0) #add batch dimension
     return im
 
 def predict(image):
     # angles = np.arange(17)*5+50
-    angles = tf.constant([65.0, 50.0, 75.0, 115.0, 130.0, 85.0, 105.0, 120.0, 95.0, 80.0, 110.0, 125.0, 90.0, 100.0, 60.0, 70.0, 55.0], dtype=tf.float32)
+    angles = tf.constant([65.0, 50.0, 75.0, 115.0, 130.0, 85.0, 105.0, 120.0, 95.0, 80.0, 110.0, 125.0, 90.0, 100.0, 60.0, 70.0, 55.0], dtype=tf.float16)
     image = preprocess(image)
 
     # self.speed_interpreter.set_tensor(self.speed_input_details[0]['index'], image)
@@ -62,4 +73,4 @@ for file_name in sorted(file_list, key=lambda x: int(x.split('.')[0])):
 
 
 df_pred = pd.DataFrame(predictions, columns=['image_id', 'angle', 'speed'])
-df_pred.to_csv(f'submission_tf_lite_v3{timestamp}.csv', index=False)
+df_pred.to_csv(f'submission_tf_lite_v2_{timestamp}.csv', index=False)
